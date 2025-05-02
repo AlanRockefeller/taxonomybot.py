@@ -37,7 +37,7 @@ The bot performs the following tasks:
 
 For a new species page Daldinia "sp-IN02", the bot would add:
 
-```
+```text
 == References ==
 * [https://www.inaturalist.org/observations?verifiable=any&place_id=any&field:Provisional%20Species%20Name=Daldinia%20%22sp-IN02%22 iNaturalist observations for provisional species name Daldinia "sp-IN02"]
 * [https://mycomap.com/taxonomy/562152-daldinia-sp-in02/ Mycomap page for Daldinia "sp-IN02"]
@@ -51,8 +51,8 @@ For a new species page Daldinia "sp-IN02", the bot would add:
 
 The bot supports the following command line options:
 
-* `--dry-run`: Shows what changes would be made without actually making edits
-* `--debug`: Displays detailed debugging information
+- `--dry-run`: Shows what changes would be made without actually making edits
+- `--debug`: Displays detailed debugging information
 
 ## Configuration
 

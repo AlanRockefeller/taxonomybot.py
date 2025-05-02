@@ -1,5 +1,3 @@
-# Initial Commit
-=======
 # Mycomap Wiki Taxonomy Bot
 
 **Version:** 1.0  

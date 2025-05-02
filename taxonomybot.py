@@ -2,7 +2,6 @@
 import requests
 import re
 import time
-import json
 import urllib.parse
 import sys
 import os
@@ -295,7 +294,7 @@ def check_inaturalist(species_name):
             else:
                 log_debug(f"iNaturalist API returned status code {response.status_code} for provisional check")
         else:
-            log_debug(f"Species found in main taxonomy, skipping provisional name check")
+            log_debug("Species found in main taxonomy, skipping provisional name check")
 
         # Return both flags so the process_new_page function knows where it was found
         return {"found": found_in_main_taxonomy or found_in_provisional,
@@ -507,7 +506,7 @@ def process_new_page(session, page_title):
                         if not updated_refs.endswith('\n\n'):
                             updated_refs += '\n'
                         updated_refs += inat_link
-                        log_debug(f"Adding iNaturalist link to existing References section")
+                        log_debug("Adding iNaturalist link to existing References section")
 
                 if need_mycomap and mycomap_url:
                     mycomap_link = f"* [{mycomap_url} Mycomap page for {species_name}]\n"

@@ -28,7 +28,18 @@ def get_mycomap_taxonomy_url(species_name, debug=False):
     if debug:
         print(f"Searching for species: {species_name}")
     
-    response = session.post(taxonomy_url, headers=headers, data=data)
+    try:
+        response = session.post(
+            taxonomy_url,
+            headers=headers,
+            data=data,
+            timeout=10,          # fail fast
+        )
+        response.raise_for_status()
+    except requests.RequestException as err:
+        if debug:
+            print(f"Request to {taxonomy_url} failed: {err}")
+        return None
     
     # Debugging info only if debug flag is set
     if debug:

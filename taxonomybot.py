@@ -5,6 +5,7 @@ import time
 import json
 import urllib.parse
 import sys
+import os
 import warnings
 import argparse
 import subprocess
@@ -32,10 +33,34 @@ WIKI_INDEX_URL = "https://mycomap.org/wiki/index.php"
 INATURALIST_BASE_URL = "https://www.inaturalist.org/observations"
 CHECK_INTERVAL = 3600  # Check every hour (in seconds)
 USERNAME = "Taxonomybot"  # Replace with your wiki bot username
-PASSWORD = "thisoooooooo"  # Replace with your wiki bot password
-VERIFY_SSL = False  # Set to False to ignore SSL certificate validation
+PASSWORD_FILE = ".wikibotpassword"  # File containing the password
+VERIFY_SSL = False  # Verify SSL not needed because we are running this locally, and OpenSSL version conflicts make using this difficult
 API_RATE_LIMIT = 1.0  # Minimum seconds between API requests to iNaturalist
 MYCOMAP_URL_SCRIPT = "/home/wikibot/bin/get.mycomapurl.py"  # Path to the script for getting MycoMap URLs
+
+# Read password from file
+def read_password():
+    try:
+        # Get the directory where the script is located
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Construct the path to the password file
+        password_path = os.path.join(script_dir, PASSWORD_FILE)
+
+        # Read the password from the file
+        with open(password_path, 'r') as file:
+            password = file.read().strip()
+
+        if not password:
+            log_info(f"Error: Password file {PASSWORD_FILE} is empty")
+            sys.exit(1)
+
+        return password
+    except FileNotFoundError:
+        log_info(f"Error: Password file {PASSWORD_FILE} not found")
+        sys.exit(1)
+    except Exception as e:
+        log_info(f"Error reading password file: {e}")
+        sys.exit(1)
 
 # Timestamp of last API request to iNaturalist
 last_api_request_time = 0
@@ -43,17 +68,6 @@ last_api_request_time = 0
 # Suppress insecure request warnings if not verifying SSL
 if not VERIFY_SSL:
     warnings.filterwarnings('ignore', message='Unverified HTTPS request')
-
-# First, install any missing dependencies
-log_debug("Checking and installing dependencies...")
-try:
-    import bs4
-except ImportError:
-    log_debug("Installing BeautifulSoup4...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4"])
-    import bs4
-from bs4 import BeautifulSoup
 
 # Helper function to make rate-limited API requests
 def rate_limited_request(url, params=None, method="get"):
@@ -82,6 +96,9 @@ def rate_limited_request(url, params=None, method="get"):
 def wiki_login():
     session = requests.Session()
 
+    # Get the password from the file
+    password = read_password()
+
     # Get login token
     params = {
         "action": "query",
@@ -101,14 +118,14 @@ def wiki_login():
     params = {
         "action": "login",
         "lgname": USERNAME,
-        "lgpassword": PASSWORD,
+        "lgpassword": password,
         "lgtoken": login_token,
         "format": "json"
     }
     response = session.post(WIKI_API_URL, data=params, verify=VERIFY_SSL)
 
     if response.json().get("login", {}).get("result") != "Success":
-        log_debug("Login failed:", response.json())
+        log_debug(f"Login failed: {response.json()}")
         return None
 
     log_debug(f"Successfully logged in as {USERNAME}")
@@ -167,10 +184,10 @@ def get_mycomap_url(species_name):
     try:
         # Call the external script to get the URL
         log_debug(f"Getting MycoMap URL for: {species_name}")
-        result = subprocess.run([MYCOMAP_URL_SCRIPT, species_name], 
+        result = subprocess.run([MYCOMAP_URL_SCRIPT, species_name],
                                capture_output=True, text=True, check=True)
         url = result.stdout.strip()
-        
+
         # Validate that we got a proper URL
         if url and url.startswith("https://mycomap.com/taxonomy/"):
             log_debug(f"Found MycoMap URL: {url}")
@@ -295,7 +312,7 @@ def edit_page(session, title, content, original_content, summary="Added iNatural
     # In dry run mode, just print what would happen and return success
     if args.dry_run:
         log_info(f"DRY RUN: Would edit page {title} with summary: {summary}")
-        
+
         # Find the differences between original and new content
         log_info("--- Content that would be added ---")
         if "== References ==" in content and "== References ==" not in original_content:
@@ -305,7 +322,7 @@ def edit_page(session, title, content, original_content, summary="Added iNatural
             if refs_match:
                 log_info("REFERENCES SECTION:")
                 log_info(refs_match.group(0))
-        
+
         if "== Gallery ==" in content and "== Gallery ==" not in original_content:
             # Extract the gallery section
             gallery_pattern = r"== Gallery ==\n(.*?)(?=(==|\Z))"
@@ -313,14 +330,14 @@ def edit_page(session, title, content, original_content, summary="Added iNatural
             if gallery_match:
                 log_info("GALLERY SECTION:")
                 log_info(gallery_match.group(0))
-                
+
         # Check for added links
         if "== References ==" in original_content:
             # Find links in new content that weren't in original
             original_links = set(re.findall(r'\[(https?://[^\s\]]+)[^\]]*\]', original_content))
             new_links = set(re.findall(r'\[(https?://[^\s\]]+)[^\]]*\]', content))
             added_links = new_links - original_links
-            
+
             if added_links:
                 log_info("ADDED LINKS:")
                 for link in added_links:
@@ -330,7 +347,7 @@ def edit_page(session, title, content, original_content, summary="Added iNatural
                     for match in link_matches:
                         if match not in original_content:
                             log_info(match)
-        
+
         log_info("----------------------------------")
         return True
 
@@ -384,7 +401,7 @@ def has_gallery_section(content):
 def has_mycomap_link(content):
     if not has_references_section(content):
         return False
-    
+
     # Check for links starting with https://mycomap.com/taxonomy
     mycomap_pattern = r'\[https://mycomap\.com/taxonomy/[^\s]+'
     return bool(re.search(mycomap_pattern, content))
@@ -393,7 +410,7 @@ def has_mycomap_link(content):
 def has_inaturalist_link(content):
     if not has_references_section(content):
         return False
-    
+
     # Check for links with "iNaturalist observations" in the description
     inaturalist_pattern = r'\[https://www\.inaturalist\.org/[^\s]+ [^\]]*iNaturalist observations[^\]]*\]'
     return bool(re.search(inaturalist_pattern, content))
@@ -414,19 +431,19 @@ def process_new_page(session, page_title):
 
     # Check if species exists on iNaturalist
     inat_result = check_inaturalist(species_name)
-    
+
     # If the species isn't found on iNaturalist, don't make any changes
     if not inat_result["found"]:
         log_info(f"Species '{species_name}' not found in iNaturalist. No edits will be made.")
         return
-    
+
     # Check if page already has a References section
     has_references = has_references_section(content)
-    
+
     # Check for MycoMap and iNaturalist links
     has_mycomap = has_mycomap_link(content)
     has_inat = has_inaturalist_link(content)
-    
+
     # Get MycoMap URL (always try to get it if we don't already have it)
     mycomap_url = None
     if not has_mycomap:
@@ -436,16 +453,16 @@ def process_new_page(session, page_title):
             log_debug(f"Successfully retrieved MycoMap URL: {mycomap_url}")
         else:
             log_debug(f"Failed to retrieve a valid MycoMap URL for {species_name}")
-    
+
     # Check if Gallery section already exists
     has_gallery = has_gallery_section(content)
-    
+
     # Determine what needs to be added
     need_references = not has_references
     need_inaturalist = not has_inat
     need_mycomap = not has_mycomap and mycomap_url is not None
     need_gallery = not has_gallery
-    
+
     # If we don't need to make any changes, return early
     if not (need_references or need_inaturalist or need_mycomap or need_gallery):
         log_debug(f"No modifications needed for {page_title}")
@@ -462,26 +479,26 @@ def process_new_page(session, page_title):
         # Find the References section with a case-insensitive pattern
         refs_pattern = r'(==\s*references\s*==)'
         refs_match = re.search(refs_pattern, new_content, re.IGNORECASE)
-        
+
         if refs_match:
             # Split content at the matched References section
             refs_header = refs_match.group(1)
             parts = new_content.split(refs_header, 1)
-            
+
             if len(parts) == 2:
                 before_refs = parts[0]
                 refs_section = refs_header + parts[1]
-                
+
                 # If there's another section after References, split again
                 next_section_match = re.search(r'(==\s+[^=]+\s+==)', refs_section[len(refs_header):], re.IGNORECASE)
                 refs_parts = None
-                
+
                 if next_section_match:
                     next_section_start = len(refs_header) + next_section_match.start(1)
                     refs_parts = [refs_section[:next_section_start], refs_section[next_section_start:]]
                 else:
                     refs_parts = [refs_section, ""]
-                
+
                 # Add new reference links
                 updated_refs = refs_parts[0]
                 if need_inaturalist:
@@ -491,7 +508,7 @@ def process_new_page(session, page_title):
                             updated_refs += '\n'
                         updated_refs += inat_link
                         log_debug(f"Adding iNaturalist link to existing References section")
-                
+
                 if need_mycomap and mycomap_url:
                     mycomap_link = f"* [{mycomap_url} Mycomap page for {species_name}]\n"
                     if mycomap_link not in updated_refs:
@@ -499,11 +516,11 @@ def process_new_page(session, page_title):
                             updated_refs += '\n'
                         updated_refs += mycomap_link
                         log_debug(f"Adding MycoMap link to existing References section: {mycomap_link}")
-                
+
                 # Ensure proper spacing between sections
                 if refs_parts[1] and not updated_refs.endswith('\n\n'):
                     updated_refs += '\n'
-                
+
                 # Combine everything back
                 new_content = before_refs + updated_refs + refs_parts[1]
             else:
@@ -521,17 +538,17 @@ def process_new_page(session, page_title):
         # Add references section if needed
         if need_references:
             references_content = "== References ==\n"
-            
+
             # Add iNaturalist link
             if need_inaturalist:
                 references_content += prepare_inaturalist_link(species_name, inat_result)
-            
+
             # Add MycoMap link if available
             if need_mycomap and mycomap_url:
                 mycomap_link = f"* [{mycomap_url} Mycomap page for {species_name}]\n"
                 references_content += mycomap_link
                 log_debug(f"Adding MycoMap link to new References section: {mycomap_link}")
-            
+
             # Ensure proper spacing
             references_content += "\n"
             new_content += references_content
@@ -564,7 +581,7 @@ def process_new_page(session, page_title):
         changes.append("MycoMap link")
     if need_gallery:
         changes.append("gallery section")
-    
+
     # Only proceed if we have changes to make
     if changes:
         action = "DRY RUN: Would add" if args.dry_run else "Adding"
@@ -581,16 +598,16 @@ def process_new_page(session, page_title):
 # Helper function to prepare the iNaturalist link
 def prepare_inaturalist_link(species_name, result):
     encoded_name = urllib.parse.quote(species_name)
-    
+
     if not result or not result["found"]:
         return ""
-        
+
     # Determine which links to add based on where the species was found
     if result["main_taxonomy"]:
         return f"* [https://www.inaturalist.org/observations?taxon_name={encoded_name}&field:DNA%20Barcode%20ITS Sequenced iNaturalist observations of {species_name}]\n"
     elif result["provisional"]:
         return f"* [https://www.inaturalist.org/observations?verifiable=any&place_id=any&field:Provisional%20Species%20Name={encoded_name} iNaturalist observations of provisional species name {species_name}]\n"
-    
+
     return ""
 
 # Main function to periodically check for new pages
